@@ -1,0 +1,24 @@
+{
+  "name": "pd-test",
+  "version": "1.0.0",
+  "description": "DSM-5 AMPD personality disorder test based on LPFS+PID-5",
+  "homepage": "https://github.com/creepy0964/pd-test#readme",
+  "bugs": {
+    "url": "https://github.com/creepy0964/pd-test/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/creepy0964/pd-test.git"
+  },
+  "license": "GPL-3.0-or-later",
+  "author": "creepy0964",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "sequelize": "^6.37.7",
+    "telegraf": "^4.16.3"
+  }
+}
