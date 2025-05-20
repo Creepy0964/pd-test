@@ -2,6 +2,7 @@ import { Context, Scenes } from "telegraf";
 
 interface SessionData extends Scenes.WizardSession {
   question: number;
+  buffer: number;
   anhedonia: number;
   anxiousness: number;
   attentionSeeking: number;

@@ -1,12 +1,12 @@
-import { Composer, session } from "telegraf";
+import { Composer, Scenes, session } from "telegraf";
 import { questions } from "../models/questionModel";
 import { MyContext } from "../context/context";
 import { traits, traitTranslation } from "../models/traitModel";
-import { Beta } from "../models/betaModel";
 import { Result } from "../models/resultModel";
 import { nanoid } from "nanoid";
 import { User } from "../models/userModel";
 import { logger } from "../database/connection";
+import { entryWizard } from "../wizard/entryWizard";
 
 export const msgComposer = new Composer<MyContext>();
 function getRandomInt(max: number) {
@@ -21,11 +21,15 @@ type Result = {
   t: number;
 };
 
+const stage = new Scenes.Stage<MyContext>([entryWizard]);
+
 msgComposer.use(session());
+msgComposer.use(stage.middleware());
 msgComposer.use(async (ctx, next) => {
-  if (!ctx.session) {
-    ctx.session = {
+  if (!ctx.session.question)
+    Object.assign(ctx.session, {
       question: 0,
+      buffer: 0,
       anhedonia: 0,
       anxiousness: 0,
       attentionSeeking: 0,
@@ -51,8 +55,7 @@ msgComposer.use(async (ctx, next) => {
       suspiciousness: 0,
       unusualBeliefsExperiences: 0,
       withdrawal: 0,
-    };
-  }
+    });
   return next();
 });
 
@@ -63,8 +66,10 @@ msgComposer.command("start", async (ctx) => {
       uTId: ctx.from.id,
       uUsername: ctx.from.username,
       uResultID: null,
+      uState: null,
     });
     logger.info(`user does not exist. creating...`);
+    ctx.scene.enter("entry");
   }
   if (user && user.toJSON().uResultID != null) {
     logger.info(
@@ -83,25 +88,25 @@ msgComposer.command("start", async (ctx) => {
     );
     return;
   }
-  if (!Beta.findByPk(ctx.from.id)) return;
-  await ctx.reply(`ВНИМАНИЕ: тест может давать сбой. будь к этому готов(а)`);
   logger.info(`user ${ctx.from.id} || ${ctx.from.username} started the test`);
-  const { qId, qText, qTrait } = questions[0]?.toJSON();
-  await ctx.reply(`Вопрос №${qId}\n\n${qText}\n\ndebug: ${qTrait}`, {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "0", callback_data: `ans0_${qTrait}` },
-          { text: "1", callback_data: `ans1_${qTrait}` },
-        ],
-        [
-          { text: "2", callback_data: `ans2_${qTrait}` },
-          { text: "3", callback_data: `ans3_${qTrait}` },
-          { text: "debug", callback_data: `debug` },
-        ],
-      ],
-    },
+});
+
+msgComposer.command("reset", async (ctx) => {
+  const user = await User.findOne({ where: { uTId: ctx.from.id } });
+  await Result.destroy({
+    where: { rUUID: user!.toJSON().uResultID },
   });
+  await user?.destroy();
+  logger.info(`user ${ctx.from.id} || ${ctx.from.username} reset the test`);
+  await ctx.reply(
+    `данные уничтожены. нажмите команду /start, чтобы начать все сначала`,
+  );
+});
+
+msgComposer.command("info", async (ctx) => {
+  await ctx.reply(
+    `тест на расстройство личности по DSM-5: форма PID-5\n\nсоздано @creepy0964 за ежегодный бюджет мавритании\n\nпримечание: как тест, так и бот находятся в стадии публичного бета-тестирования, а значит, могут возникать баги и ошибки. если таковые возникли, пожалуйста, пиши в лс`,
+  );
 });
 
 msgComposer.on("callback_query", async (ctx) => {
@@ -112,21 +117,48 @@ msgComposer.on("callback_query", async (ctx) => {
   if (data.includes("ans0")) {
     ctx.session.question += 1;
     ctx.session[ans[1]] += 0;
+    ctx.session.buffer = 0;
   }
 
   if (data.includes("ans1")) {
     ctx.session.question += 1;
     ctx.session[ans[1]] += 1;
+    ctx.session.buffer = 1;
   }
 
   if (data.includes("ans2")) {
     ctx.session.question += 1;
     ctx.session[ans[1]] += 2;
+    ctx.session.buffer = 2;
   }
 
   if (data.includes("ans3")) {
     ctx.session.question += 1;
     ctx.session[ans[1]] += 3;
+    ctx.session.buffer = 3;
+  }
+
+  if (data.includes("back")) {
+    if (ctx.session.buffer == -1 || ctx.session.question == 0) return;
+    ctx.session.question -= 1;
+    const { qId, qText, qTrait } = questions[ctx.session.question]?.toJSON();
+    ctx.session[qTrait] -= ctx.session.buffer;
+    ctx.session.buffer = -1;
+  }
+
+  if (data.includes("healthy")) {
+    const user = await User.findOne({ where: { uTId: ctx.from.id } });
+    await user?.update({ uState: "healthy" });
+  }
+
+  if (data.includes("pd")) {
+    const user = await User.findOne({ where: { uTId: ctx.from.id } });
+    await user?.update({ uState: "pd" });
+  }
+
+  if (data.includes("pd_therapy")) {
+    const user = await User.findOne({ where: { uTId: ctx.from.id } });
+    await user?.update({ uState: "pd_therapy" });
   }
 
   if (data.includes("debug")) {
@@ -180,6 +212,10 @@ msgComposer.on("callback_query", async (ctx) => {
             { text: "2", callback_data: `ans2_${qTrait}` },
             { text: "3", callback_data: `ans3_${qTrait}` },
           ],
+          [
+            { text: "назад", callback_data: `back` },
+            { text: "debug", callback_data: `debug` },
+          ],
         ],
       },
     });
@@ -220,6 +256,11 @@ msgComposer.on("callback_query", async (ctx) => {
     await ctx.reply(
       `${result.map((n) => `${n.trait}: T = ${n.t}`).join("\n\n")}`,
     );
-    await ctx.reply(`числа выше отправить @creepy0964`);
+    await ctx.reply(
+      `спасибо за участие в бета\\-тесте\\! интерпретацию результатов можно изучить здесь\\: [тык](https://teletype.in/@creepy0964/pd-test-interpretation)`,
+      {
+        parse_mode: "MarkdownV2",
+      },
+    );
   }
 });

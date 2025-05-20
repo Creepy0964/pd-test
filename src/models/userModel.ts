@@ -19,6 +19,9 @@ export const User = db.define(
     uResultID: {
       type: DataTypes.STRING,
     },
+    uState: {
+      type: DataTypes.STRING,
+    },
   },
   {
     timestamps: false,

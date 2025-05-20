@@ -1,7 +1,5 @@
 import { Telegraf } from "telegraf";
 import { MyContext } from "./context/context";
-import { Logger } from "./utils/logger";
-import { msgComposer } from "./handlers/messageHandler";
 import { initialize } from "./handlers/init";
 import { logger } from "./database/connection";
 

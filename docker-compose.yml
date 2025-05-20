@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  pdtest-bot:
+    image: node:latest
+    container_name: pdtest-bot
+    working_dir: /app
+    restart: always
+    volumes:
+      - ./:/app
+      - db-volume:/db
+    command: "npm start"
+    env_file: "./src/config/.env-prod"
+    networks:
+      pdtest-network:
+        ipv4_address: "173.19.0.9"
+
+volumes:
+  db-volume:
+    driver: local
+    driver_opts:
+      type: none
+      device: /root/pdtest-db
+      o: bind
+
+networks:
+  pdtest-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 173.19.0.0/16
+          gateway: 173.19.0.1
