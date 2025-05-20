@@ -2,12 +2,16 @@ import { Telegraf } from "telegraf";
 import { MyContext } from "./context/context";
 import { Logger } from "./utils/logger";
 import { msgComposer } from "./handlers/messageHandler";
+import { initialize } from "./handlers/init";
+import { logger } from "./database/connection";
 
-export const bot = new Telegraf<MyContext>("");
-export const logger = new Logger(3);
+export const bot = new Telegraf<MyContext>(
+  "5118259434:AAHZcwNbU_IlbVJmUtu8V-jm2Rp6wxrZ63k",
+);
 
-bot.use(msgComposer);
-bot.launch();
+bot.launch(() => {
+  initialize();
+});
 
 bot.catch(async (err) => {
   console.log(err);

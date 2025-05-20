@@ -1,5 +1,5 @@
 import { readdirSync, statSync, unlinkSync } from "fs";
-import { logger } from "../index.ts";
+import { logger } from "../database/connection";
 
 export const logClearTimeout = () => {
   setInterval(() => {

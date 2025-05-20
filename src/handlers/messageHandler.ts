@@ -1,5 +1,4 @@
 import { Composer, session } from "telegraf";
-import { db } from "../database/connection";
 import { questions } from "../models/questionModel";
 import { MyContext } from "../context/context";
 import { traits, traitTranslation } from "../models/traitModel";
@@ -7,9 +6,9 @@ import { Beta } from "../models/betaModel";
 import { Result } from "../models/resultModel";
 import { nanoid } from "nanoid";
 import { User } from "../models/userModel";
+import { logger } from "../database/connection";
 
 export const msgComposer = new Composer<MyContext>();
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function getRandomInt(max: number) {
   return Math.floor(Math.random() * max);
 }
@@ -59,18 +58,26 @@ msgComposer.use(async (ctx, next) => {
 
 msgComposer.command("start", async (ctx) => {
   const user = await User.findOne({ where: { uTId: ctx.from.id } });
-  if (!user)
+  if (!user) {
     User.create({
       uTId: ctx.from.id,
       uUsername: ctx.from.username,
       uResultID: null,
     });
+    logger.info(`user does not exist. creating...`);
+  }
   if (user && user.toJSON().uResultID != null) {
+    logger.info(
+      `user ${ctx.from.id} || ${ctx.from.username} has already completed the test`,
+    );
     await ctx.reply(
       `ты уже проходил(а) тест. посмотреть результаты можно по кнопке ниже`,
       {
         reply_markup: {
-          inline_keyboard: [[{ text: "результаты", callback_data: "results" }]],
+          inline_keyboard: [
+            [{ text: "результаты", callback_data: "results" }],
+            [{ text: "сброс результата", callback_data: "resultReset" }],
+          ],
         },
       },
     );
@@ -78,6 +85,7 @@ msgComposer.command("start", async (ctx) => {
   }
   if (!Beta.findByPk(ctx.from.id)) return;
   await ctx.reply(`ВНИМАНИЕ: тест может давать сбой. будь к этому готов(а)`);
+  logger.info(`user ${ctx.from.id} || ${ctx.from.username} started the test`);
   const { qId, qText, qTrait } = questions[0]?.toJSON();
   await ctx.reply(`Вопрос №${qId}\n\n${qText}\n\ndebug: ${qTrait}`, {
     reply_markup: {
@@ -89,7 +97,7 @@ msgComposer.command("start", async (ctx) => {
         [
           { text: "2", callback_data: `ans2_${qTrait}` },
           { text: "3", callback_data: `ans3_${qTrait}` },
-          // { text: "debug", callback_data: `debug` },
+          { text: "debug", callback_data: `debug` },
         ],
       ],
     },
@@ -97,7 +105,8 @@ msgComposer.command("start", async (ctx) => {
 });
 
 msgComposer.on("callback_query", async (ctx) => {
-  const data = ctx.callbackQuery.data;
+  let data = "";
+  if ("data" in ctx.callbackQuery) data = ctx.callbackQuery.data;
   const ans = data.split("_");
 
   if (data.includes("ans0")) {
@@ -122,13 +131,16 @@ msgComposer.on("callback_query", async (ctx) => {
 
   if (data.includes("debug")) {
     for (const x of traits) {
-      const { tId, tName, tQuestions, tMean, tSD } = x?.toJSON();
+      const { tName, tQuestions } = x?.toJSON();
       ctx.session[tName] = getRandomInt(tQuestions * 3 + 1);
     }
     ctx.session.question = 220;
   }
 
   if (data.includes("results")) {
+    logger.info(
+      `user ${ctx.from.id} || ${ctx.from.username} retrieved the results`,
+    );
     const user = await User.findOne({ where: { uTId: ctx.from.id } });
     const results = await Result.findAll({
       where: { rUUID: user!.toJSON().uResultID },
@@ -136,6 +148,21 @@ msgComposer.on("callback_query", async (ctx) => {
     const resultMapped = results.map((n) => n.toJSON());
     await ctx.reply(
       `${resultMapped.map((n) => `${traitTranslation[n.rTrait]}: T = ${n.rT}`).join("\n\n")}`,
+    );
+    return;
+  }
+
+  if (data.includes("resultReset")) {
+    logger.info(
+      `user ${ctx.from.id} || ${ctx.from.username} deleted their result`,
+    );
+    const user = await User.findOne({ where: { uTId: ctx.from.id } });
+    await Result.destroy({
+      where: { rUUID: user!.toJSON().uResultID },
+    });
+    await user!.update({ uResultID: null });
+    ctx.editMessageText(
+      `результат удален. нажми команду /start, чтобы пройти тест заново`,
     );
     return;
   }
@@ -157,10 +184,13 @@ msgComposer.on("callback_query", async (ctx) => {
       },
     });
   } else {
+    logger.info(
+      `user ${ctx.from.id} || ${ctx.from.username} completed the test`,
+    );
     const result: Result[] = [];
     const resultId = nanoid(10);
     for (const x of traits) {
-      const { tId, tName, tQuestions, tMean, tSD } = x?.toJSON();
+      const { tName, tQuestions, tMean, tSD } = x?.toJSON();
       if (tName in ctx.session) {
         const rawPure: number = ctx.session[tName] / tQuestions;
         const raw: number = Math.round(ctx.session[tName] / tQuestions);
@@ -173,7 +203,7 @@ msgComposer.on("callback_query", async (ctx) => {
           z: z,
           t: parseFloat(t.toFixed(2)),
         });
-        Result.create({
+        await Result.create({
           rUUID: resultId,
           rRawPure: rawPure,
           rRaw: raw,
@@ -181,7 +211,10 @@ msgComposer.on("callback_query", async (ctx) => {
           rT: parseFloat(t.toFixed(2)),
           rTrait: tName,
         });
-        User.update({ uResultID: resultId }, { where: { uTID: ctx.from.id } });
+        await User.update(
+          { uResultID: resultId },
+          { where: { uTID: ctx.from.id } },
+        );
       }
     }
     await ctx.reply(
