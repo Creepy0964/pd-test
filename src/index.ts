@@ -3,9 +3,7 @@ import { MyContext } from "./context/context";
 import { initialize } from "./handlers/init";
 import { logger } from "./database/connection";
 
-export const bot = new Telegraf<MyContext>(
-  "5118259434:AAHZcwNbU_IlbVJmUtu8V-jm2Rp6wxrZ63k",
-);
+export const bot = new Telegraf<MyContext>("");
 
 bot.launch(() => {
   initialize();

@@ -1,4 +1,6 @@
 node_modules
 db
+db/database.db
+db/database2.db
 logs
 src/config/.env-test

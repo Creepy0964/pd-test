@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import { User } from "../models/userModel";
 import { logger } from "../database/connection";
 import { entryWizard } from "../wizard/entryWizard";
+import { bot } from "..";
 
 export const msgComposer = new Composer<MyContext>();
 function getRandomInt(max: number) {
@@ -15,9 +16,6 @@ function getRandomInt(max: number) {
 
 type Result = {
   trait: string;
-  rawPure: number;
-  raw: number;
-  z: number;
   t: number;
 };
 
@@ -59,6 +57,32 @@ msgComposer.use(async (ctx, next) => {
   return next();
 });
 
+msgComposer.command("zalupkaras", async (ctx) => {
+  if (ctx.from.id != 814958085) return;
+  const users = await User.findAll();
+  const args = ctx.message?.text.split(" ").slice(1);
+  const textToSay = args.join(" ");
+  for (const x of users) {
+    try {
+      await bot.telegram.sendMessage(x.toJSON().uTId, textToSay);
+    } catch (err) {
+      logger.error(err);
+    }
+  }
+});
+
+msgComposer.command("lock", async (ctx) => {
+  if (ctx.from.id != 814958085) return;
+  await User.update({ uUsername: "testLocked" }, { where: { uTid: 228 } });
+  await ctx.reply(`locked`);
+});
+
+msgComposer.command("unlock", async (ctx) => {
+  if (ctx.from.id != 814958085) return;
+  await User.update({ uUsername: "abc" }, { where: { uTid: 228 } });
+  await ctx.reply(`unlocked`);
+});
+
 msgComposer.command("start", async (ctx) => {
   const user = await User.findOne({ where: { uTId: ctx.from.id } });
   if (!user) {
@@ -69,7 +93,19 @@ msgComposer.command("start", async (ctx) => {
       uState: null,
     });
     logger.info(`user does not exist. creating...`);
-    ctx.scene.enter("entry");
+    const test = await User.findOne({ where: { uTId: 228 } });
+    if (test!.toJSON().uUsername == "testLocked") {
+      await ctx.reply(
+        `увы, пока тест недоступен, так как мы ждем, чтобы отправиться на техработы. пожалуйста, подожди`,
+      );
+      return;
+    } else {
+      logger.info(
+        `user ${ctx.from.id} || ${ctx.from.username} started the test`,
+      );
+      ctx.scene.enter("entry");
+      return;
+    }
   }
   if (user && user.toJSON().uResultID != null) {
     logger.info(
@@ -89,6 +125,7 @@ msgComposer.command("start", async (ctx) => {
     return;
   }
   logger.info(`user ${ctx.from.id} || ${ctx.from.username} started the test`);
+  ctx.scene.enter("entry");
 });
 
 msgComposer.command("reset", async (ctx) => {
@@ -179,7 +216,7 @@ msgComposer.on("callback_query", async (ctx) => {
     });
     const resultMapped = results.map((n) => n.toJSON());
     await ctx.reply(
-      `${resultMapped.map((n) => `${traitTranslation[n.rTrait]}: T = ${n.rT}`).join("\n\n")}`,
+      `${resultMapped.map((n) => `${traitTranslation[n.rTrait]}: T = ${parseFloat(n.rT.toFixed(2))}`).join("\n\n")}`,
     );
     return;
   }
@@ -201,24 +238,28 @@ msgComposer.on("callback_query", async (ctx) => {
 
   if (ctx.session.question <= 219) {
     const { qId, qText, qTrait } = questions[ctx.session.question]?.toJSON();
-    ctx.editMessageText(`Вопрос №${qId}\n\n${qText}\n\ndebug: ${qTrait}`, {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "0", callback_data: `ans0_${qTrait}` },
-            { text: "1", callback_data: `ans1_${qTrait}` },
+    try {
+      ctx.editMessageText(`Вопрос №${qId}\n\n${qText}\n\ndebug: ${qTrait}`, {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "0", callback_data: `ans0_${qTrait}` },
+              { text: "1", callback_data: `ans1_${qTrait}` },
+            ],
+            [
+              { text: "2", callback_data: `ans2_${qTrait}` },
+              { text: "3", callback_data: `ans3_${qTrait}` },
+            ],
+            [
+              { text: "назад", callback_data: `back` },
+              { text: "debug", callback_data: `debug` },
+            ],
           ],
-          [
-            { text: "2", callback_data: `ans2_${qTrait}` },
-            { text: "3", callback_data: `ans3_${qTrait}` },
-          ],
-          [
-            { text: "назад", callback_data: `back` },
-            { text: "debug", callback_data: `debug` },
-          ],
-        ],
-      },
-    });
+        },
+      });
+    } catch (err) {
+      logger.error(err);
+    }
   } else {
     logger.info(
       `user ${ctx.from.id} || ${ctx.from.username} completed the test`,
@@ -229,22 +270,18 @@ msgComposer.on("callback_query", async (ctx) => {
       const { tName, tQuestions, tMean, tSD } = x?.toJSON();
       if (tName in ctx.session) {
         const rawPure: number = ctx.session[tName] / tQuestions;
-        const raw: number = Math.round(ctx.session[tName] / tQuestions);
-        const z: number = (raw - tMean) / tSD;
+        const z: number = (rawPure - tMean) / tSD;
         const t: number = 50 + z * 10;
         result.push({
           trait: traitTranslation[tName],
-          rawPure: rawPure,
-          raw: raw,
-          z: z,
           t: parseFloat(t.toFixed(2)),
         });
         await Result.create({
           rUUID: resultId,
           rRawPure: rawPure,
-          rRaw: raw,
+          rRaw: rawPure,
           rZ: z,
-          rT: parseFloat(t.toFixed(2)),
+          rT: z,
           rTrait: tName,
         });
         await User.update(
