@@ -1,4 +1,3 @@
-import { session } from "telegraf";
 import { bot } from "..";
 import { logger } from "../database/connection";
 import { logClearTimeout } from "../utils/logClear";

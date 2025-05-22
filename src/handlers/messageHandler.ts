@@ -8,6 +8,7 @@ import { User } from "../models/userModel";
 import { logger } from "../database/connection";
 import { entryWizard } from "../wizard/entryWizard";
 import { bot } from "..";
+import { sendResultChart } from "../utils/genChart";
 
 export const msgComposer = new Composer<MyContext>();
 function getRandomInt(max: number) {
@@ -67,6 +68,38 @@ msgComposer.command("zalupkaras", async (ctx) => {
       await bot.telegram.sendMessage(x.toJSON().uTId, textToSay);
     } catch (err) {
       logger.error(err);
+    }
+  }
+});
+
+msgComposer.command("zalupkaras2", async (ctx) => {
+  if (ctx.from.id != 814958085) return;
+  const users = await User.findAll();
+  const args = ctx.message?.text.split(" ").slice(1);
+  const textToSay = args.join(" ");
+  for (const x of users) {
+    if (x.toJSON().uResultID == null) {
+      try {
+        await bot.telegram.sendMessage(x.toJSON().uTId, textToSay);
+      } catch (err) {
+        logger.error(err);
+      }
+    }
+  }
+});
+
+msgComposer.command("zalupkaras1", async (ctx) => {
+  if (ctx.from.id != 814958085) return;
+  const users = await User.findAll();
+  const args = ctx.message?.text.split(" ").slice(1);
+  const textToSay = args.join(" ");
+  for (const x of users) {
+    if (x.toJSON().uResultID) {
+      try {
+        await bot.telegram.sendMessage(x.toJSON().uTId, textToSay);
+      } catch (err) {
+        logger.error(err);
+      }
     }
   }
 });
@@ -218,6 +251,14 @@ msgComposer.on("callback_query", async (ctx) => {
     await ctx.reply(
       `${resultMapped.map((n) => `${traitTranslation[n.rTrait]}: T = ${parseFloat(n.rT.toFixed(2))}`).join("\n\n")}`,
     );
+    await sendResultChart(
+      ctx,
+      resultMapped.map(({ rTrait, rT }) => ({
+        trait: traitTranslation[rTrait],
+        t: rT,
+      })),
+      "0",
+    );
     return;
   }
 
@@ -281,7 +322,7 @@ msgComposer.on("callback_query", async (ctx) => {
           rRawPure: rawPure,
           rRaw: rawPure,
           rZ: z,
-          rT: z,
+          rT: t,
           rTrait: tName,
         });
         await User.update(
@@ -293,6 +334,7 @@ msgComposer.on("callback_query", async (ctx) => {
     await ctx.reply(
       `${result.map((n) => `${n.trait}: T = ${n.t}`).join("\n\n")}`,
     );
+    await sendResultChart(ctx, result, resultId);
     await ctx.reply(
       `спасибо за участие в бета\\-тесте\\! интерпретацию результатов можно изучить здесь\\: [тык](https://teletype.in/@creepy0964/pd-test-interpretation)`,
       {
